@@ -1,124 +1,88 @@
-class Linear(object):
+# Define a max header size of 64 characters
+MAX_HEADER_SIZE = 2
 
-    @staticmethod
-    def forward(x, w, b):
-        """
-        Computes the forward pass for an linear (fully-connected) layer.
-        The input x has shape (N, d_1, ..., d_k) and contains a minibatch of N
-        examples, where each example x[i] has shape (d_1, ..., d_k). We will
-        reshape each input into a vector of dimension D = d_1 * ... * d_k, and
-        then transform it to an output vector of dimension M.
-        Inputs:
-        - x: A tensor containing input data, of shape (N, d_1, ..., d_k)
-        - w: A tensor of weights, of shape (D, M)
-        - b: A tensor of biases, of shape (M,)
-        Returns a tuple of:
-        - out: output, of shape (N, M)
-        - cache: (x, w, b)
-        """
-        N = x.shape[0]
-        transform = x.reshape((N, -1))
-        out = torch.mm(transform, w) + b
-        cache = (x, w, b)
-        return out, cache
+# Example of protocol headers for each OSI layer
+HEADERS = {
+    'application': 'APP_HDR_',
+    'presentation': 'PRESENT_HDR_',
+    'session': 'SESSION_HDR_',
+    'transport': 'TRANSPORT_HDR_',
+    'network': 'NETWORK_HDR_',
+    'data_link': 'DATALINK_HDR_',
+    'physical': 'PHYSICAL_HDR_'
+}
 
-    @staticmethod
-    def backward(dout, cache):
-        """
-        Computes the backward pass for an linear layer.
-        Inputs:
-        - dout: Upstream derivative, of shape (N, M)
-        - cache: Tuple of:
-          - x: Input data, of shape (N, d_1, ... d_k)
-          - w: Weights, of shape (D, M)
-          - b: Biases, of shape (M,)
-        Returns a tuple of:
-        - dx: Gradient with respect to x, of shape
-          (N, d1, ..., d_k)
-        - dw: Gradient with respect to w, of shape (D, M)
-        - db: Gradient with respect to b, of shape (M,)
-        """
-        x, w, b = cache
-        dx, dw, db = None, None, None
-
-        N = x.shape[0]
-
-        # Reshape x to (N, D)
-        input_vect = x.reshape((N, -1))
-
-        # Gradient with respect to input x
-        dx = dout @ w.T
-        dx = dx.view(*x.shape)
-
-        # Gradient with respect to weights w
-        dw = input_vect.T @ dout
-
-        # Gradient with respect to biases b
-        db = dout.sum(dim=0)
-
-        return dx, dw, db
+# Layer 7: Application layer
 
 
-class ReLU(object):
+def application_layer(message, size):
+    header = HEADERS['application'].ljust(MAX_HEADER_SIZE)
+    new_message = header + message
+    print(f"Application Layer: {new_message}")
+    presentation_layer(new_message, len(new_message))
 
-    @staticmethod
-    def forward(x):
-        """
-        Computes the forward pass for a layer of rectified
-        linear units (ReLUs).
-        Input:
-        - x: Input; a tensor of any shape
-        Returns a tuple of:
-        - out: Output, a tensor of the same shape as x
-        - cache: x
-        """
-        out = x.clamp(min=0)
-        cache = x
-        return out, cache
-
-    @staticmethod
-    def backward(dout, cache):
-        """
-        Computes the backward pass for a layer of rectified
-        linear units (ReLUs).
-        Input:
-        - dout: Upstream derivatives, of any shape
-        - cache: Input x, of same shape as dout
-        Returns:
-        - dx: Gradient with respect to x
-        """
-        dx, x = None, cache
-        dx = dout.clone()
-        dx[x <= 0] = 0
-        return dx
+# Layer 6: Presentation layer
 
 
-class Linear_ReLU(object):
+def presentation_layer(message, size):
+    header = HEADERS['presentation'].ljust(MAX_HEADER_SIZE)
+    new_message = header + message
+    print(f"Presentation Layer: {new_message}")
+    session_layer(new_message, len(new_message))
 
-    @staticmethod
-    def forward(x, w, b):
-        """
-        Convenience layer that performs an linear transform
-        followed by a ReLU.
+# Layer 5: Session layer
 
-        Inputs:
-        - x: Input to the linear layer
-        - w, b: Weights for the linear layer
-        Returns a tuple of:
-        - out: Output from the ReLU
-        - cache: Object to give to the backward pass
-        """
-        a, fc_cache = Linear.forward(x, w, b)
-        out, relu_cache = ReLU.forward(a)
-        cache = (fc_cache, relu_cache)
-        return out, cache
 
-    @staticmethod
-    def backward(dout, cache):
-        """
-        Backward pass for the linear-relu convenience layer
-        """
-        fc_cache, relu_cache = cache
-        da = ReLU.backward(dout, relu_cache)
-        dx, dw, db = Linear.backward(da, fc_cache)
-        return dx, dw, db
+def session_layer(message, size):
+    header = HEADERS['session'].ljust(MAX_HEADER_SIZE)
+    new_message = header + message
+    print(f"Session Layer: {new_message}")
+    transport_layer(new_message, len(new_message))
+
+# Layer 4: Transport layer
+
+
+def transport_layer(message, size):
+    header = HEADERS['transport'].ljust(MAX_HEADER_SIZE)
+    new_message = header + message
+    print(f"Transport Layer: {new_message}")
+    network_layer(new_message, len(new_message))
+
+# Layer 3: Network layer
+
+
+def network_layer(message, size):
+    header = HEADERS['network'].ljust(MAX_HEADER_SIZE)
+    new_message = header + message
+    print(f"Network Layer: {new_message}")
+    data_link_layer(new_message, len(new_message))
+
+# Layer 2: Data Link layer
+
+
+def data_link_layer(message, size):
+    header = HEADERS['data_link'].ljust(MAX_HEADER_SIZE)
+    new_message = header + message
+    print(f"Data Link Layer: {new_message}")
+    physical_layer(new_message, len(new_message))
+
+# Layer 1: Physical layer
+
+
+def physical_layer(message, size):
+    header = HEADERS['physical'].ljust(MAX_HEADER_SIZE)
+    new_message = header + message
+    print(f"Physical Layer: {new_message}")
+    # No lower layer after this one
+
+# Main function to initiate message flow
+
+
+def main():
+    application_message = input("Enter the application message: ")
+    size = len(application_message)
+    application_layer(application_message, size)
+
+
+if __name__ == "__main__":
+    main()
