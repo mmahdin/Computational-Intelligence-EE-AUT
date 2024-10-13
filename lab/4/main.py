@@ -1,9 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
-# i have computational inteligence lab. in current i should to implement the k-means algorithm and test the result.
-# i implement the k-means and test it and evaluate it. this is my code:
-# Algorithm Implementation
+from sklearn.datasets import make_circles
 
 
 def initialize_centroids(data, k):
@@ -108,9 +105,9 @@ def generate_data():
     np_labels = np.vstack((Label1, Label2, Label3, Label4))
 
     return np_labels, np_data
+
+
 # Plot the clusters
-
-
 def plot_clusters(np_data, labels, k, centroids):
     # Colors for different clusters
     colors = ['ro', 'go', 'bo', 'mo', 'co', 'yo', 'ko']
@@ -132,51 +129,23 @@ def cluster_and_plot(np_data):
         centroids, labels = k_means(np_data, k)
         plot_clusters(np_data, labels, k, centroids)
 
-
-# Plotting the Results
-# Main script
-labels, np_data = generate_data()  # Generate the data
-
-# Cluster and plot for 2, 3, and 4 clusters
-cluster_and_plot(np_data)
-# Evaluating the Algorithm
-# Function to calculate error for each category
+# Function to compute the Euclidean distance
 
 
-def category_error(data, labels, centroids):
-    """
-    Calculates the mean distance of points in each category to their centroid.
-    :param data: 2D numpy array where each row is a data point
-    :param labels: 1D numpy array of cluster indices for each data point
-    :param centroids: 2D numpy array of centroid positions
-    :return: Mean distance (error) for each category
-    """
-    error_per_category = []
-    for i in range(centroids.shape[0]):  # for each centroid
-        points_in_cluster = data[labels == i]
-        if points_in_cluster.size > 0:
-            distance = np.linalg.norm(points_in_cluster - centroids[i], axis=1)
-            mean_distance = np.mean(distance**2)
-            error_per_category.append(mean_distance)
-    return np.array(error_per_category)
-
-# Function to calculate total K-Means error
+def euclidean_distance(a, b):
+    return np.sqrt(np.sum((a - b)**2))
 
 
-def total_error(data, labels, centroids):
-    """
-    Calculate the total error of the K-Means algorithm (sum of mean distances across all categories).
-    :param data: 2D numpy array where each row is a data point
-    :param labels: 1D numpy array of cluster indices for each data point
-    :param centroids: 2D numpy array of centroid positions
-    :return: Total errortotal_error
-    """
-    category_errors = category_error(data, labels, centroids)
-    total = np.sum(category_errors)
-    return total
+# Function to calculate inertia (within-cluster sum of squares)
+def calculate_inertia(X, clusters, centroids):
+    inertia = 0
+    for i, point in enumerate(X):
+        centroid = centroids[clusters[i]]
+        inertia += euclidean_distance(point, centroid)**2
+    return inertia/X.shape[0]
+
+
 # Function to plot the error vs number of clusters
-
-
 def plot_error_vs_clusters(k_values, errors):
     """
     Plot the error of K-Means vs number of clusters.
@@ -191,15 +160,23 @@ def plot_error_vs_clusters(k_values, errors):
     plt.show()
 
 
-# Plotting the Error
+# Main script
+labels, np_data = generate_data()  # Generate the data
+
+# Cluster and plot for 2, 3, and 4 clusters
+cluster_and_plot(np_data)
+
 # Evaluate K-Means for k = 1 to 15 and calculate errors
 k_values = range(1, 16)
 errors = []
 
 for k in k_values:
     centroids, labels = k_means(np_data, k)
-    error = total_error(np_data, labels, centroids)
+    error = calculate_inertia(np_data, labels, centroids)
     errors.append(error)
 
 # Plot the error as a function of the number of clusters
 plot_error_vs_clusters(k_values, errors)
+
+
+# 333
