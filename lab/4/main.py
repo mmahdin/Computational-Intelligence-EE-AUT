@@ -177,6 +177,3 @@ for k in k_values:
 
 # Plot the error as a function of the number of clusters
 plot_error_vs_clusters(k_values, errors)
-
-
-# 333
