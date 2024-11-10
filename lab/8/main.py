@@ -1,230 +1,126 @@
+import re
+import pandas as pd
+import string
+import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import ConcatDataset, random_split, DataLoader
-import pandas as pd
-from torch.utils.data import Dataset, DataLoader
-import torch.nn.functional as F
-import torch
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Load and preprocess the data
+data = pd.read_csv('IMDB-Dataset.csv')
 
-
-# Custom dataset class with padding
-class SentimentAnalysisDataset(Dataset):
-    def __init__(self, csv_file, max_length=2494):
-        # Load data from CSV
-        self.data = pd.read_csv(csv_file)
-        self.max_length = max_length  # Set max length for padding
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        # Get the row by index
-        review = self.data.loc[idx, 'review']
-        # assuming tokenized is stored as a string of list
-        tokenized = eval(self.data.loc[idx, 'tokenized'])
-        label = self.data.loc[idx, 'label']
-
-        # Convert to tensor and pad
-        tokenized_tensor = torch.tensor(tokenized, dtype=torch.long)
-        tokenized_tensor = F.pad(
-            tokenized_tensor, (0, self.max_length - len(tokenized_tensor)), value=0
-        )  # Pad with zeros up to max_length
-
-        label_tensor = torch.tensor(label, dtype=torch.long)
-
-        return tokenized_tensor, label_tensor
+# Removing HTML tags
 
 
-# Paths to CSV files
-train_csv = 'imdb_train.csv'
-test_csv = 'imdb_test.csv'
+def clean_html(text):
+    clean = re.compile('<.*?>')
+    cleantext = re.sub(clean, '', text)
+    return cleantext
 
-# Load datasets
-train_dataset = SentimentAnalysisDataset(train_csv)
-test_dataset = SentimentAnalysisDataset(test_csv)
-
-# Combine train and test datasets
-combined_dataset = ConcatDataset([train_dataset, test_dataset])
-
-# Define split proportions
-train_ratio = 0.7
-val_ratio = 0.15
-test_ratio = 0.15
-
-# Calculate dataset sizes
-train_size = int(train_ratio * len(combined_dataset))
-val_size = int(val_ratio * len(combined_dataset))
-test_size = len(combined_dataset) - train_size - val_size
-
-# Split combined dataset
-new_train_dataset, new_val_dataset, new_test_dataset = random_split(
-    combined_dataset, [train_size, val_size, test_size]
-)
-
-# Create data loaders
-batch_size = 32
-train_loader = DataLoader(
-    new_train_dataset, batch_size=batch_size, shuffle=True)
-val_loader = DataLoader(new_val_dataset, batch_size=batch_size, shuffle=False)
-test_loader = DataLoader(
-    new_test_dataset, batch_size=batch_size, shuffle=False)
-
-# Define the RNN model for sentiment analysis
+# First round of cleaning
 
 
-class EncoderRNN(nn.Module):
-    def __init__(self, vocab_size, embed_size, hidden_size):
-        super(EncoderRNN, self).__init__()
-        """
-        N: num batches (sentences).
-        D: Each token is represented by a D-dimensional embedding vector (embed_size).
-        T: Maximum sequence length (number of words in each sequence)
-        H: hidden_size
+def clean_text1(text):
+    text = text.lower()
+    text = re.sub('\[.*?\]', '', text)
+    text = re.sub('[%s]' % re.escape(string.punctuation), '', text)
+    text = re.sub('\w*\d\w*', '', text)
+    return text
 
-        shape input: (N, T)
-        shape embeded input: (N, T, D)
-        
-        for each word in the sentence:
-            next_h = torch.tanh(x.mm(Wx) + prev_h.mm(Wh) + b)
-            {
-                where:
-                x:      (N,D)
-                Wx:     (D,H)
-                Wh:     (H,H)
-                b:      (H,)
-                next_h: (N,H)
-            }
-            (This is one step in the image above.)
-        
-        This process repeats for all the words in the sentence, so the number of output or hidden states at the end is T.
+# Second round of cleaning
 
-        output: (N, T, H)
-        """
-        self.embedding = nn.Embedding(
-            vocab_size, embed_size)  # assigne a vector of embec_size to each word
-        self.rnn = nn.RNN(embed_size, hidden_size, batch_first=True)
 
-        self.hidden_dim = hidden_size
+def clean_text2(text):
+    text = re.sub('[''"",,,]', '', text)
+    text = re.sub('\n', '', text)
+    return text
+
+
+data['review'] = data['review'].apply(
+    clean_html).apply(clean_text1).apply(clean_text2)
+
+# Tokenize and pad sequences
+max_features = 5000
+maxlen = 600
+tokenizer = Tokenizer(num_words=max_features, split=' ')
+tokenizer.fit_on_texts(data['review'].values)
+X = tokenizer.texts_to_sequences(data['review'].values)
+X = pad_sequences(X, maxlen=maxlen)
+
+# Convert labels to categorical
+data['sentiment'] = data['sentiment'].apply(
+    lambda x: 1 if x == 'positive' else 0)
+Y = data['sentiment'].values
+
+# Train-test split
+X_train, X_test, Y_train, Y_test = train_test_split(
+    X, Y, test_size=0.2, random_state=42)
+
+# Convert to PyTorch tensors
+X_train = torch.tensor(X_train, dtype=torch.long)
+Y_train = torch.tensor(Y_train, dtype=torch.long)
+X_test = torch.tensor(X_test, dtype=torch.long)
+Y_test = torch.tensor(Y_test, dtype=torch.long)
+
+# Create DataLoader for batching
+batch_size = 64
+train_data = TensorDataset(X_train, Y_train)
+test_data = TensorDataset(X_test, Y_test)
+train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
+test_loader = DataLoader(test_data, batch_size=batch_size)
+
+# Define the LSTM model
+
+
+class SentimentLSTM(nn.Module):
+    def __init__(self, max_features, embed_dim, lstm_out, num_classes=2):
+        super(SentimentLSTM, self).__init__()
+        self.embedding = nn.Embedding(max_features, embed_dim)
+        self.lstm = nn.LSTM(embed_dim, lstm_out, batch_first=True, dropout=0.2)
+        self.dropout = nn.Dropout(0.4)
+        self.fc = nn.Linear(lstm_out, num_classes)
 
     def forward(self, x):
-        """
-        hidden: (N, H)
-        """
         x = self.embedding(x)
-        output, hidden = self.rnn(x)
-        return hidden
+        x = self.dropout(x)
+        lstm_out, (h_n, c_n) = self.lstm(x)
+        out = self.fc(h_n[-1])  # Using the last hidden state
+        return out
 
 
-class DecoderRNN(nn.Module):
-    def __init__(self, output_dim, hidden_dim):
-        super(DecoderRNN, self).__init__()
-        self.rnn = nn.RNN(hidden_dim, hidden_dim, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, output_dim)
+# Model parameters
+embed_dim = 128
+lstm_out = 128
+model = SentimentLSTM(max_features, embed_dim, lstm_out)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-        self.hidden_dim = hidden_dim
+# Training loop
+num_epochs = 16
+for epoch in range(num_epochs):
+    model.train()
+    running_loss = 0.0
+    for inputs, labels in train_loader:
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item()
+    print(
+        f"Epoch [{epoch + 1}/{num_epochs}], Loss: {running_loss / len(train_loader)}")
 
-    def forward(self, hidden):
-        batch_size = hidden.size(1)
-        input = torch.zeros(batch_size, 1, self.hidden_dim).to(
-            hidden.device)  # [batch_size, 1, hidden_dim]
-        outputs, hidden = self.rnn(input, hidden)
+# Validation
+model.eval()
+correct, total = 0, 0
+with torch.no_grad():
+    for inputs, labels in test_loader:
+        outputs = model(inputs)
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
 
-        # Pass final RNN output to linear layer
-        # prediction = [batch_size, output_dim]
-        prediction = self.fc(outputs.squeeze(1))
-        return prediction
-
-
-class Seq2Seq(nn.Module):
-    def __init__(self, encoder, decoder):
-        super(Seq2Seq, self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
-
-    def forward(self, src):
-        hidden = self.encoder(src)
-        print(f'output hidden: f{hidden.shape}')
-        output = self.decoder(hidden)
-        print(f'final output : f{output.shape}')
-        return output.reshape((-1,))
-
-
-# Set parameters
-vocab_size = 88585  # As per your dataset
-embed_size = 128
-hidden_size = 64
-output_size = 1  # Assuming binary classification: positive or negative sentiment
-num_epochs = 10
-learning_rate = 0.001
-
-
-# Instantiate the model, define the loss function and optimizer
-encoder = EncoderRNN(vocab_size, embed_size, hidden_size)
-decoder = DecoderRNN(output_size, hidden_size)
-model = Seq2Seq(encoder, decoder).to(device)
-criterion = nn.BCEWithLogitsLoss()
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-# Training function
-
-
-def train_model(model, train_loader, val_loader):
-    print('********* train model **********')
-    for epoch in range(num_epochs):
-        model.train()
-        total_loss = 0
-        for inputs, labels in train_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, labels.float())
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-
-        # Validation accuracy after each epoch
-        model.eval()
-        all_preds, all_labels = [], []
-        with torch.no_grad():
-            for inputs, labels in val_loader:
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                _, preds = torch.max(outputs, 1)
-                all_preds.extend(preds.tolist())
-                all_labels.extend(labels.float().tolist())
-
-        val_accuracy = accuracy_score(all_labels, all_preds)
-        print(
-            f'Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss/len(train_loader):.4f}, Val Accuracy: {val_accuracy:.4f}')
-
-# Testing function
-
-
-def evaluate_model(model, test_loader):
-    print('********* evaluate model **********')
-    model.eval()
-    all_preds, all_labels = [], []
-    with torch.no_grad():
-        for inputs, labels in test_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            _, preds = torch.max(outputs, 1)
-            all_preds.extend(preds.tolist())
-            all_labels.extend(labels.float().tolist())
-
-    test_accuracy = accuracy_score(all_labels, all_preds)
-    report = classification_report(all_labels, all_preds, target_names=[
-                                   "Negative", "Positive"])
-    print(f'Test Accuracy: {test_accuracy:.4f}')
-    print("Classification Report:\n", report)
-
-
-# Train the model
-train_model(model, train_loader, val_loader)
-
-# Evaluate the model on test data
-evaluate_model(model, test_loader)
+print(f"Validation Accuracy: {100 * correct / total}%")
