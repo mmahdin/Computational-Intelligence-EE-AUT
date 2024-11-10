@@ -6,11 +6,12 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
-from keras.preprocessing.text import Tokenizer
-from keras.preprocessing.sequence import pad_sequences
+from collections import Counter
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load and preprocess the data
-data = pd.read_csv('IMDB-Dataset.csv')
+data = pd.read_csv('IMDB-sentiment-analysis-master/IMDB-Dataset.csv')
 
 # Removing HTML tags
 
@@ -42,28 +43,43 @@ def clean_text2(text):
 data['review'] = data['review'].apply(
     clean_html).apply(clean_text1).apply(clean_text2)
 
-# Tokenize and pad sequences
+# Build vocabulary manually and encode
 max_features = 5000
-maxlen = 600
-tokenizer = Tokenizer(num_words=max_features, split=' ')
-tokenizer.fit_on_texts(data['review'].values)
-X = tokenizer.texts_to_sequences(data['review'].values)
-X = pad_sequences(X, maxlen=maxlen)
+counter = Counter([word for review in data['review']
+                  for word in review.split()])
+# Reserve spots for <pad> and <unk>
+most_common = counter.most_common(max_features - 2)
+# +2 to reserve 0 for <pad>, 1 for <unk>
+vocab = {word: idx + 2 for idx, (word, _) in enumerate(most_common)}
+vocab['<pad>'] = 0
+vocab['<unk>'] = 1
 
-# Convert labels to categorical
+
+def encode(text):
+    return [vocab.get(token, vocab['<unk>']) for token in text.split()]
+
+
+data['encoded_review'] = data['review'].apply(encode)
+
+# Pad sequences to maxlen
+maxlen = 600
+
+
+def pad_sequence_custom(sequence, maxlen=maxlen, padding_value=vocab['<pad>']):
+    return torch.tensor(sequence[:maxlen] + [padding_value] * (maxlen - len(sequence)), dtype=torch.long)
+
+
+data['padded_review'] = data['encoded_review'].apply(pad_sequence_custom)
+X = torch.stack(data['padded_review'].tolist())
+
+# Convert labels to binary
 data['sentiment'] = data['sentiment'].apply(
     lambda x: 1 if x == 'positive' else 0)
-Y = data['sentiment'].values
+Y = torch.tensor(data['sentiment'].values, dtype=torch.long)
 
 # Train-test split
 X_train, X_test, Y_train, Y_test = train_test_split(
     X, Y, test_size=0.2, random_state=42)
-
-# Convert to PyTorch tensors
-X_train = torch.tensor(X_train, dtype=torch.long)
-Y_train = torch.tensor(Y_train, dtype=torch.long)
-X_test = torch.tensor(X_test, dtype=torch.long)
-Y_test = torch.tensor(Y_test, dtype=torch.long)
 
 # Create DataLoader for batching
 batch_size = 64
@@ -94,16 +110,17 @@ class SentimentLSTM(nn.Module):
 # Model parameters
 embed_dim = 128
 lstm_out = 128
-model = SentimentLSTM(max_features, embed_dim, lstm_out)
+model = SentimentLSTM(max_features, embed_dim, lstm_out).to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
-num_epochs = 16
+num_epochs = 5
 for epoch in range(num_epochs):
     model.train()
     running_loss = 0.0
     for inputs, labels in train_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, labels)
@@ -118,6 +135,7 @@ model.eval()
 correct, total = 0, 0
 with torch.no_grad():
     for inputs, labels in test_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
         outputs = model(inputs)
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
