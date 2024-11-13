@@ -8,85 +8,14 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 from collections import Counter
 
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
+
+import numpy as np
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Load and preprocess the data
-data = pd.read_csv('IMDB-sentiment-analysis-master/IMDB-Dataset.csv')
-
-# Removing HTML tags
-
-
-def clean_html(text):
-    clean = re.compile('<.*?>')
-    cleantext = re.sub(clean, '', text)
-    return cleantext
-
-# First round of cleaning
-
-
-def clean_text1(text):
-    text = text.lower()
-    text = re.sub('\[.*?\]', '', text)
-    text = re.sub('[%s]' % re.escape(string.punctuation), '', text)
-    text = re.sub('\w*\d\w*', '', text)
-    return text
-
-# Second round of cleaning
-
-
-def clean_text2(text):
-    text = re.sub('[''"",,,]', '', text)
-    text = re.sub('\n', '', text)
-    return text
-
-
-data['review'] = data['review'].apply(
-    clean_html).apply(clean_text1).apply(clean_text2)
-
-# Build vocabulary manually and encode
-max_features = 5000
-counter = Counter([word for review in data['review']
-                  for word in review.split()])
-# Reserve spots for <pad> and <unk>
-most_common = counter.most_common(max_features - 2)
-# +2 to reserve 0 for <pad>, 1 for <unk>
-vocab = {word: idx + 2 for idx, (word, _) in enumerate(most_common)}
-vocab['<pad>'] = 0
-vocab['<unk>'] = 1
-
-
-def encode(text):
-    return [vocab.get(token, vocab['<unk>']) for token in text.split()]
-
-
-data['encoded_review'] = data['review'].apply(encode)
-
-# Pad sequences to maxlen
-maxlen = 600
-
-
-def pad_sequence_custom(sequence, maxlen=maxlen, padding_value=vocab['<pad>']):
-    return torch.tensor(sequence[:maxlen] + [padding_value] * (maxlen - len(sequence)), dtype=torch.long)
-
-
-data['padded_review'] = data['encoded_review'].apply(pad_sequence_custom)
-X = torch.stack(data['padded_review'].tolist())
-
-# Convert labels to binary
-data['sentiment'] = data['sentiment'].apply(
-    lambda x: 1 if x == 'positive' else 0)
-Y = torch.tensor(data['sentiment'].values, dtype=torch.long)
-
-# Train-test split
-X_train, X_test, Y_train, Y_test = train_test_split(
-    X, Y, test_size=0.2, random_state=42)
-
-# Create DataLoader for batching
-batch_size = 64
-train_data = TensorDataset(X_train, Y_train)
-test_data = TensorDataset(X_test, Y_test)
-train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
-test_loader = DataLoader(test_data, batch_size=batch_size)
 
 # Define the LSTM model
 
@@ -95,7 +24,7 @@ class SentimentLSTM(nn.Module):
     def __init__(self, max_features, embed_dim, lstm_out, num_classes=2):
         super(SentimentLSTM, self).__init__()
         self.embedding = nn.Embedding(max_features, embed_dim)
-        self.lstm = nn.LSTM(embed_dim, lstm_out, batch_first=True, dropout=0.2)
+        self.lstm = nn.LSTM(embed_dim, lstm_out, batch_first=True)
         self.dropout = nn.Dropout(0.4)
         self.fc = nn.Linear(lstm_out, num_classes)
 
@@ -107,38 +36,186 @@ class SentimentLSTM(nn.Module):
         return out
 
 
+# Define the GRU model
+class SentimentGRU(nn.Module):
+    def __init__(self, max_features, embed_dim, gru_out, num_classes=2):
+        super(SentimentGRU, self).__init__()
+        self.embedding = nn.Embedding(max_features, embed_dim)
+        self.gru = nn.GRU(embed_dim, gru_out, batch_first=True, dropout=0.2)
+        self.dropout = nn.Dropout(0.4)
+        self.fc = nn.Linear(gru_out, num_classes)
+
+    def forward(self, x):
+        x = self.embedding(x)
+        x = self.dropout(x)
+        gru_out, h_n = self.gru(x)
+        out = self.fc(h_n[-1])  # Using the last hidden state
+        return out
+
+
+# Define the Simple RNN model
+class SentimentRNN(nn.Module):
+    def __init__(self, max_features, embed_dim, rnn_out, num_classes=2):
+        super(SentimentRNN, self).__init__()
+        self.embedding = nn.Embedding(max_features, embed_dim)
+        self.rnn = nn.RNN(embed_dim, rnn_out, batch_first=True)
+        self.fc = nn.Linear(rnn_out, num_classes)
+
+    def forward(self, x):
+        x = self.embedding(x)
+        rnn_out, h_n = self.rnn(x)
+        out = self.fc(h_n[-1])  # Using the last hidden state
+        return out
+
+
+# Load the Melbourne Temperature data
+# Adjust the path
+data = pd.read_csv('archive/daily-minimum-temperatures-in-me.csv', header=0)
+temperatures = data['temp'].values.astype(float)
+
+# Normalize the temperature values
+# scaler = MinMaxScaler(feature_range=(0, 1))
+# temperatures = scaler.fit_transform(temperatures.reshape(-1, 1)).squeeze()
+
+# Set sequence length (number of previous time steps to use for prediction)
+sequence_length = 1000
+
+# Create sequences and labels
+sequences = []
+labels = []
+for i in range(len(temperatures) - sequence_length):
+    sequences.append(temperatures[i:i + sequence_length])
+    labels.append(temperatures[i + sequence_length])
+
+sequences = np.array(sequences)
+labels = np.array(labels)
+
+# Convert to tensors
+sequences = torch.tensor(sequences, dtype=torch.float32).to(device)
+labels = torch.tensor(labels, dtype=torch.float32).to(device)
+
+# Train-test split
+X_train, X_val, y_train, y_val = train_test_split(
+    sequences, labels, test_size=0.2, random_state=42)
+
+# Create DataLoader objects
+train_data = TensorDataset(X_train, y_train)
+val_data = TensorDataset(X_val, y_val)
+
+train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
+val_loader = DataLoader(val_data, batch_size=32)
+
+
+# Training function
+def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=50):
+    for epoch in range(num_epochs):
+        model.train()
+        train_loss = 0
+
+        for sequences, labels in train_loader:
+            optimizer.zero_grad()
+            output = model(sequences.long()).reshape((-1,))
+            loss = criterion(output, labels)
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item()
+
+        val_loss = 0
+        model.eval()
+        with torch.no_grad():
+            for sequences, labels in val_loader:
+                output = model(sequences.long()).reshape((-1,))
+                loss = criterion(output, labels)
+                val_loss += loss.item()
+        if epoch % 10 == 0:
+            print(
+                f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss/len(train_loader)}, Val Loss: {val_loss/len(val_loader)}')
+
+# Define the evaluation function
+
+
+def evaluate_model(model, data_loader):
+    model.eval()
+    predictions = []
+    actuals = []
+
+    # Generate predictions
+    with torch.no_grad():
+        for sequences, labels in data_loader:
+            output = model(sequences.long()).reshape((-1,))  # Forward pass
+            predictions.extend(output.cpu().numpy())  # Append predictions
+            actuals.extend(labels.cpu().numpy())  # Append actual labels
+
+    # Calculate MSE, RMSE, and MAE
+    mse = mean_squared_error(actuals, predictions)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(actuals, predictions)
+    print(f'MSE: {mse}, RMSE: {rmse}, MAE: {mae}')
+
+    return actuals, predictions, mse, rmse, mae
+
+# Define the plotting function
+
+
+def plot_predictions(actuals, predictions, title='Model Predictions vs Actual'):
+    plt.figure(figsize=(10, 5))
+    plt.plot(actuals, label="Actual", color='b')
+    plt.plot(predictions, label="Predicted", color='r')
+    plt.title(title)
+    plt.xlabel("Time")
+    plt.ylabel("Temperature (normalized)")
+    plt.legend()
+    plt.show()
+
+
 # Model parameters
 embed_dim = 128
-lstm_out = 128
-model = SentimentLSTM(max_features, embed_dim, lstm_out).to(device)
-criterion = nn.CrossEntropyLoss()
+hidden_size = 128
+max_features = sequence_length
+model = SentimentRNN(max_features, embed_dim, hidden_size,
+                     num_classes=1).to(device)
+criterion = nn.MSELoss().to(device)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-# Training loop
-num_epochs = 5
-for epoch in range(num_epochs):
-    model.train()
-    running_loss = 0.0
-    for inputs, labels in train_loader:
-        inputs, labels = inputs.to(device), labels.to(device)
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
-    print(
-        f"Epoch [{epoch + 1}/{num_epochs}], Loss: {running_loss / len(train_loader)}")
+# Train the model
+train_model(model, train_loader, val_loader, criterion, optimizer)
 
-# Validation
-model.eval()
-correct, total = 0, 0
-with torch.no_grad():
-    for inputs, labels in test_loader:
-        inputs, labels = inputs.to(device), labels.to(device)
-        outputs = model(inputs)
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
+# Evaluate on the validation set
+actuals, predictions, mse, rmse, mae = evaluate_model(model, val_loader)
+# Plot the first 100 predictions
+plot_predictions(actuals[:100], predictions[:100])
 
-print(f"Validation Accuracy: {100 * correct / total}%")
+# Model parameters
+embed_dim = 64
+hidden_size = 128
+max_features = sequence_length
+model = SentimentLSTM(max_features, embed_dim,
+                      hidden_size, num_classes=1).to(device)
+criterion = nn.MSELoss().to(device)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+# Train the model
+train_model(model, train_loader, val_loader, criterion, optimizer)
+
+# Evaluate on the validation set
+actuals, predictions, mse, rmse, mae = evaluate_model(model, val_loader)
+# Plot the first 100 predictions
+plot_predictions(actuals[:100], predictions[:100])
+
+
+# Model parameters
+embed_dim = 128
+hidden_size = 128
+max_features = sequence_length
+model = SentimentGRU(max_features, embed_dim, hidden_size,
+                     num_classes=1).to(device)
+criterion = nn.MSELoss().to(device)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+# Train the model
+train_model(model, train_loader, val_loader, criterion, optimizer)
+
+# Evaluate on the validation set
+actuals, predictions, mse, rmse, mae = evaluate_model(model, val_loader)
+# Plot the first 100 predictions
+plot_predictions(actuals[:100], predictions[:100])
