@@ -1,0 +1,7 @@
+are you familiar with The Space Station Remote Manipulator System (SSRMS)?
+The Space Station Remote Manipulator System (SSRMS) is a 7 DoF robot which has 7 revolute joints and two long flexible links (booms).
+The SSRMS have no uniform mass and stiffness distributions. Most of its masses are concentrated at the joints, and the joint structural flexibilities contribute a major portion of the overall arm flexibility. 
+
+i want to write the code for simulation. this is instruction:
+Assume that M is not recognized in the robot arm, identify this system. We want the end of the vector to follow the sin10t path.
+where [q1, q2] = x1 is the position at the end of each link, x2=d(x1)/dt is the speed at the end of each link, u is the torque, M is the inertia matrix, C is the Curiolis and centrifugal forces, D is the viscous damping and g is the gravity force. It is defined as follows:‬‬
