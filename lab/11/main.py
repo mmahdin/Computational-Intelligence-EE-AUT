@@ -106,16 +106,16 @@ class DQNAgent:
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
-# Main training loop with rendering
+# Main training loop
 
 
-def train_cartpole_with_gui():
-    env = gym.make('CartPole-v1', render_mode="human")  # Enable GUI rendering
+def train_cartpole():
+    env = gym.make('CartPole-v1')
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
 
     agent = DQNAgent(state_size, action_size)
-    episodes = 500
+    episodes = 5000
     target_update_freq = 10
 
     for episode in range(episodes):
@@ -123,9 +123,6 @@ def train_cartpole_with_gui():
         total_reward = 0
 
         while True:
-            # Render the environment
-            env.render()
-
             action = agent.get_action(state)
             next_state, reward, done, truncated, _ = env.step(action)
             total_reward += reward
@@ -142,14 +139,32 @@ def train_cartpole_with_gui():
         if episode % target_update_freq == 0:
             agent.update_target_network()
 
-        print(
-            f"Episode {episode}, Total Reward: {total_reward}, Epsilon: {agent.epsilon}")
+        if episode % 100 == 1:
+            print(
+                f"Episode {episode}, Total Reward: {total_reward}, Epsilon: {agent.epsilon}")
 
-        # Delay for visualization clarity
-        time.sleep(0.05)
+    env.close()
+
+    # Render the environment after training
+    render_cartpole(agent)
+
+# Function to render the CartPole environment after training
+
+
+def render_cartpole(agent):
+    env = gym.make('CartPole-v1', render_mode="human")
+    state, _ = env.reset()
+
+    while True:
+        env.render()
+        action = agent.get_action(state)
+        state, _, done, truncated, _ = env.step(action)
+
+        if done or truncated:
+            break
 
     env.close()
 
 
 if __name__ == "__main__":
-    train_cartpole_with_gui()
+    train_cartpole()
