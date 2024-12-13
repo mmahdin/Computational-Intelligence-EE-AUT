@@ -6,10 +6,10 @@ import torch.optim as optim
 from collections import deque
 import random
 import time  # For rendering delays
+import imageio
+
 
 # Define the Q-network
-
-
 class QNetwork(nn.Module):
     def __init__(self, state_size, action_size):
         super(QNetwork, self).__init__()
@@ -115,7 +115,7 @@ def train_cartpole():
     action_size = env.action_space.n
 
     agent = DQNAgent(state_size, action_size)
-    episodes = 5000
+    episodes = 1500
     target_update_freq = 10
 
     for episode in range(episodes):
@@ -143,20 +143,23 @@ def train_cartpole():
             print(
                 f"Episode {episode}, Total Reward: {total_reward}, Epsilon: {agent.epsilon}")
 
+        if total_reward >= 500:
+            render_cartpole(agent)
+            break
+
     env.close()
 
-    # Render the environment after training
-    render_cartpole(agent)
 
 # Function to render the CartPole environment after training
-
-
 def render_cartpole(agent):
-    env = gym.make('CartPole-v1', render_mode="human")
+    env = gym.make('CartPole-v1', render_mode="rgb_array")
     state, _ = env.reset()
 
+    frames = []  # To store frames for the video
     while True:
-        env.render()
+        frame = env.render()
+        frames.append(frame)  # Capture each frame
+
         action = agent.get_action(state)
         state, _, done, truncated, _ = env.step(action)
 
@@ -164,6 +167,15 @@ def render_cartpole(agent):
             break
 
     env.close()
+
+    # Save frames as MP4
+    save_video(frames, "cartpole_output.mp4")
+
+
+def save_video(frames, filename):
+    fps = 30  # Frames per second
+    imageio.mimwrite(filename, frames, fps=fps)
+    print(f"Video saved as {filename}")
 
 
 if __name__ == "__main__":

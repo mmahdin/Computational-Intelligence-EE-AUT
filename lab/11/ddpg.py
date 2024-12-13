@@ -5,11 +5,13 @@ import torch.optim as optim
 import numpy as np
 from collections import deque
 import random
+import imageio
 
 
 class ContinuousCartPoleEnv(gym.Env):
     def __init__(self):
-        self.env = gym.make("CartPole-v1")
+        # Enable RGB rendering
+        self.env = gym.make("CartPole-v1", render_mode="rgb_array")
         self.action_space = gym.spaces.Box(
             low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         self.observation_space = self.env.observation_space
@@ -27,7 +29,7 @@ class ContinuousCartPoleEnv(gym.Env):
         return self.env.reset(**kwargs)
 
     def render(self):
-        return self.env.render()
+        return self.env.render()  # Returns RGB frame data for video saving
 
     def close(self):
         self.env.close()
@@ -175,7 +177,15 @@ def train_ddpg(env, agent, episodes=2000, batch_size=64):
         agent.noise.reset()
         episode_reward = 0
         done = False
+
+        # Capture frames for the last episode
+        frames = []
+
         while not done:
+            # if episode == episodes - 1:  # Only render the last episode
+            frame = env.render()
+            frames.append(frame)
+
             action = agent.select_action(state)
             next_state, reward, done, truncated, _ = env.step(action)
             agent.replay_buffer.add(state, action, reward, next_state, done)
@@ -186,6 +196,20 @@ def train_ddpg(env, agent, episodes=2000, batch_size=64):
 
         print(f"Episode {episode + 1}, Reward: {episode_reward}")
 
+        # Save video for the last episode
+        if episode_reward >= 600:
+            save_video(frames, "ddpg_cartpole1.mp4")
+            break
+
+    env.close()
+
+
+# Function to save video frames as MP4
+def save_video(frames, filename):
+    fps = 30  # Frames per second
+    imageio.mimwrite(filename, frames, fps=fps)
+    print(f"Video saved as {filename}")
+
 
 if __name__ == "__main__":
     env = ContinuousCartPoleEnv()
@@ -195,4 +219,4 @@ if __name__ == "__main__":
 
     agent = DDPGAgent(state_dim, action_dim, max_action)
 
-    train_ddpg(env, agent)
+    train_ddpg(env, agent, episodes=5000)
